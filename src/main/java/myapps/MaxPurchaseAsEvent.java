@@ -39,6 +39,8 @@ import org.apache.kafka.streams.state.KeyValueStore;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
+import myapps.MinPurchaseAsEvent.Min;
+
 import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -63,17 +65,45 @@ public class MaxPurchaseAsEvent {
             return Serdes.serdeFrom(serializer, deserializer);
         }
     }
+   
+   
+   static class Max{
+	   Double maximum=0d;
+	   Map<String, Object> record;
+	
+	public Double getMaximum() {
+		return maximum;
+	}
+	public void setMaximum(Double maximum) {
+		this.maximum = maximum;
+	}
+	public Map<String, Object> getRecord() {
+		return record;
+	}
+	public void setRecord(Map<String, Object> record) {
+		this.record = record;
+	}
+	
+	public static Max max=null;
+	
+	public static Max getInstance() {
+		if(max==null) max= new Max();
+		return max;
+	}
+	
+}
 	
 
 	public static void main(String[] args) throws Exception {
         Properties props = new Properties();
-        props.put(StreamsConfig.APPLICATION_ID_CONFIG, "max_purchase_3");
+        props.put(StreamsConfig.APPLICATION_ID_CONFIG, "max_purchase_4");
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "X:9092");
         props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
         props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
         Map<String, Object> serdeProps = new HashMap<>();
         Serde<Map> hashMapSerde = SerdeFactory.createSerde(Map.class, serdeProps);
         Serde<Double> doubleSerde = SerdeFactory.createSerde(Double.class, serdeProps);
+        Serde<Max> maxSerde = SerdeFactory.createSerde(Max.class, serdeProps);
         Gson gson  = new Gson();
         Type hashMapType= new TypeToken<Map<String, Object>>(){}.getType(); 
         final StreamsBuilder builder = new StreamsBuilder();
@@ -85,15 +115,14 @@ public class MaxPurchaseAsEvent {
 			return map;
         }).selectKey((k,v)->{return "";})
         .groupByKey(Grouped.with(Serdes.String(), hashMapSerde))
-        .aggregate(()->{return 0d;}, (kev,val,agg)->{
+        .aggregate(()->{return Max.getInstance();}, (kev,val,agg)->{
         	double purch_amt=(Double)val.get("purch_amt");
-        	if(purch_amt>agg) return purch_amt; else return agg;
-        },Materialized.with(Serdes.String(), doubleSerde))
+        	if(purch_amt>agg.getMaximum()) { agg.setMaximum(purch_amt); agg.setRecord(val);} return agg;
+        },Materialized.with(Serdes.String(), maxSerde))
         .toStream()
-        .foreach((k,v)->{System.out.println(k+"_"+v);});
-        		
-        ;
-
+        .foreach((k,v)->{System.out.println(k+"_"+gson.toJson(v));});
+        ;		
+        
         final Topology topology = builder.build();
         final KafkaStreams streams = new KafkaStreams(topology, props);
         final CountDownLatch latch = new CountDownLatch(1);

@@ -64,16 +64,41 @@ public class MinPurchaseAsEvent {
         }
     }
 	
+   static class Min{
+	   Double minimum=Double.MAX_VALUE;
+	   Map<String, Object> record;
+	
+	public Double getMinimum() {
+		return minimum;
+	}
+	public void setMinimum(Double minimum) {
+		this.minimum = minimum;
+	}
+	public Map<String, Object> getRecord() {
+		return record;
+	}
+	public void setRecord(Map<String, Object> record) {
+		this.record = record;
+	}
+	
+	public static Min min=null;
+	
+	public static Min getInstance() {
+		if(min==null) min= new Min();
+		return min;
+	}
+}
 
 	public static void main(String[] args) throws Exception {
         Properties props = new Properties();
-        props.put(StreamsConfig.APPLICATION_ID_CONFIG, "min_purchase_2");
+        props.put(StreamsConfig.APPLICATION_ID_CONFIG, "min_purchase_6");
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "X:9092");
         props.put(StreamsConfig.DEFAULT_KEY_SERDE_CLASS_CONFIG, Serdes.String().getClass());
         props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, Serdes.String().getClass());
         Map<String, Object> serdeProps = new HashMap<>();
         Serde<Map> hashMapSerde = SerdeFactory.createSerde(Map.class, serdeProps);
         Serde<Double> doubleSerde = SerdeFactory.createSerde(Double.class, serdeProps);
+        Serde<Min> minSerde = SerdeFactory.createSerde(Min.class, serdeProps);
         Gson gson  = new Gson();
         Type hashMapType= new TypeToken<Map<String, Object>>(){}.getType(); 
         final StreamsBuilder builder = new StreamsBuilder();
@@ -85,13 +110,12 @@ public class MinPurchaseAsEvent {
 			return map;
         }).selectKey((k,v)->{return "";})
         .groupByKey(Grouped.with(Serdes.String(), hashMapSerde))
-        .aggregate(()->{return Double.MAX_VALUE;}, (kev,val,agg)->{
+        .aggregate(()->{return Min.getInstance();}, (kev,val,agg)->{
         	double purch_amt=(Double)val.get("purch_amt");
-        	if(purch_amt<agg) return purch_amt; else return agg;
-        },Materialized.with(Serdes.String(), doubleSerde))
+        	if(purch_amt<agg.getMinimum()) { agg.setMinimum(purch_amt); agg.setRecord(val);}  return agg;
+        },Materialized.with(Serdes.String(), minSerde))
         .toStream()
-        .foreach((k,v)->{System.out.println(k+"_"+v);});
-        		
+        .foreach((k,v)->{System.out.println(k+"_"+gson.toJson(v));});
         ;
 
         final Topology topology = builder.build();
